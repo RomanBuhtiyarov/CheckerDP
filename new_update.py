@@ -1,0 +1,216 @@
+import os
+import sys
+import time
+from datetime import datetime, timedelta
+import subprocess
+import undetected_chromedriver as uc
+import winsound
+import requests
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support.ui import WebDriverWait
+
+# ---------------- НАСТРОЙКИ ----------------
+
+
+# https://cologne.pasport.org.ua/solutions/e-queue   Koln
+
+# URL = "https://berlin.pasport.org.ua/solutions/e-queue"  # Berlin
+# https://munich.pasport.org.ua/solutions/e-queue
+
+# URL = "https://munich.pasport.org.ua/solutions/e-queue"   #Munich
+
+URL = "https://berlin.pasport.org.ua/solutions/e-queue"
+
+
+CHECK_INTERVAL = 10 * 60  # 15 минут
+
+SCREENSHOT_PATH = os.path.join(os.getcwd(), "slots_found.png")
+
+NO_SLOTS_KEYWORDS = [
+    "Наразі всі місця зайняті",
+    "Будь ласка, спробуйте в інший час або день",
+    "Кількість талонів обмежена пропускною здатністю центру"
+]
+
+TELEGRAM_TOKEN = "8270411425:AAGmTOgU8FQFss_YKEP0uNOMk9-T2DXYwNA"  # Замените на токен вашего бота
+TELEGRAM_CHAT_ID = "-4863657228"  # Замените на ID чата/группы
+
+# ------------------------------------------
+
+
+def log(msg):
+    now = datetime.now().strftime("%H:%M:%S")
+    print(f"[{now}] {msg}", flush=True)
+
+
+def beep_found():
+    for _ in range(5):
+        winsound.Beep(2000, 500)
+        time.sleep(0.3)
+
+
+def beep_quiet():
+    winsound.Beep(800, 300)
+
+def send_telegram_notification(message, photo_path=None):
+    if not TELEGRAM_TOKEN or TELEGRAM_TOKEN == "YOUR_TELEGRAM_BOT_TOKEN":
+        log("❌ Токен Telegram бота не настроен. Уведомление не отправлено.")
+        return
+    if not TELEGRAM_CHAT_ID or TELEGRAM_CHAT_ID == "YOUR_TELEGRAM_CHAT_ID":
+        log("❌ ID чата Telegram не настроен. Уведомление не отправлено.")
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {
+        "chat_id": TELEGRAM_CHAT_ID,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+
+    try:
+        if photo_path and os.path.exists(photo_path):
+            log(f"Попытка отправить фото в Telegram: {photo_path}")
+            photo_url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendPhoto"
+            with open(photo_path, 'rb') as photo:
+                files = {'photo': photo}
+                photo_response = requests.post(photo_url, data={"chat_id": TELEGRAM_CHAT_ID}, files=files)
+                if photo_response.ok:
+                    log("✅ Фото успешно отправлено в Telegram.")
+                else:
+                    log(f"❌ Ошибка при отправке фото в Telegram: {photo_response.status_code} - {photo_response.text}")
+            time.sleep(1) # Задержка, чтобы сообщение пришло после фото
+
+        log(f"Попытка отправить текстовое уведомление в Telegram (чат: {TELEGRAM_CHAT_ID})...")
+        response = requests.post(url, json=payload)
+        if response.ok:
+            log("✅ Уведомление успешно отправлено в Telegram.")
+        else:
+            log(f"❌ Ошибка при отправке уведомления в Telegram: {response.status_code} - {response.text}")
+    except Exception as e:
+        log(f"❌ Ошибка отправки в Telegram: {e}")
+
+
+def create_driver():
+    options = uc.ChromeOptions()
+    options.binary_location = r"C:\Program Files\Google\Chrome Beta\Application\chrome.exe"
+
+    options.add_argument("--window-size=1280,800")
+    options.add_argument("--lang=uk-UA")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--start-maximized")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    return uc.Chrome(options=options)
+
+
+def check_slots():
+    log("Перевіряю наявність місць...")
+    # send_telegram_notification(f"<b>Починаю перевірку наявності місць на {URL}...</b>")
+
+    try:
+        driver = create_driver()
+    except Exception as e:
+        log(f"❌ Chrome не запущено: {e}")
+        return False
+
+    try:
+        # Прогрев (важно для Cloudflare)
+        driver.get("https://www.google.com")
+        time.sleep(10)
+
+        log(f"Отправляю запрос на {URL}...") # Закомментируйте эту строку, чтобы отключить это сообщение
+        driver.get(URL)
+        log("Чекаю Cloudflare...")
+
+        WebDriverWait(driver, 40).until(
+            EC.presence_of_element_located((By.TAG_NAME, "body"))
+        )
+
+        # Ждем, пока на странице появится осмысленный контент
+        log("Чекаю завантаження основного контенту...")
+        def content_loaded(driver):
+            text = driver.find_element(By.TAG_NAME, "body").text
+            # Проверяем наличие ключевых слов отсутствия мест или достаточную длину текста
+            return any(k in text for k in NO_SLOTS_KEYWORDS) or len(text) > 500
+
+        WebDriverWait(driver, 60).until(content_loaded)
+
+        # 🔥 ВАЖНО: берём ВИДИМЫЙ текст
+        text = driver.find_element(By.TAG_NAME, "body").text
+
+        # 🔍 Проверка отсутствия мест
+        if any(k in text for k in NO_SLOTS_KEYWORDS):
+            log("❌ Місць немає")
+            # send_telegram_notification(f"<b>Місць немає</b>")
+            beep_quiet()
+            return False
+
+        # если нет текста — вероятно есть слоты
+        log("✅ МОЖЛИВО Є ВІЛЬНІ МІСЦЯ!")
+        driver.save_screenshot(SCREENSHOT_PATH)
+        beep_found()
+        send_telegram_notification(f"<b>✅ Знайдено можливі вільні місця на {URL}!</b>\nПеревір негайно!", photo_path=SCREENSHOT_PATH)
+        return True
+
+    except Exception as e:
+        log(f"⚠️ Помилка: {e}")
+        return False
+
+    finally:
+        try:
+            driver.quit()
+        except:
+            pass
+
+
+def countdown(next_check_time):
+    while True:
+        now = datetime.now()
+        remaining = (next_check_time - now).total_seconds()
+
+        if remaining <= 0:
+            break
+
+        mins, secs = divmod(int(remaining), 60)
+        print(f"\r⏳ До наступної перевірки: {mins:02d}:{secs:02d}", end="", flush=True)
+
+        time.sleep(1)
+
+    print("\r" + " " * 50 + "\r", end="")
+
+
+def main():
+    print("=" * 60)
+    print("ДП Документ Кельн, Händelstraße 25−29 — моніторинг")
+    print(f"Перевірка кожні {CHECK_INTERVAL // 60} хвилин")
+    print(f"URL: {URL}")
+    print("=" * 60)
+
+    while True:
+        try:
+            found = check_slots()
+
+            if found:
+                log("🚨 ЗАЙДИ НА САЙТ НЕГАЙНО!")
+
+        except KeyboardInterrupt:
+            print("\nЗупинено.")
+            sys.exit(0)
+
+        except Exception as e:
+            log(f"❗ Критична помилка: {e}")
+
+        # 🔥 вычисляем точное время следующей проверки
+        next_check_time = datetime.now() + timedelta(seconds=CHECK_INTERVAL)
+
+        log(f"Наступна перевірка о {next_check_time.strftime('%H:%M:%S')}")
+        print("-" * 60)
+
+        # ⏳ таймер с учетом сна ПК
+        countdown(next_check_time)
+
+
+if __name__ == "__main__":
+    main()
