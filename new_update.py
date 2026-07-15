@@ -180,10 +180,24 @@ def countdown(next_check_time):
 
     print("\r" + " " * 50 + "\r", end="")
 
+def create_driver():
+    options = uc.ChromeOptions()
+    options.binary_location = (
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    )
+
+    options.add_argument("--window-size=1280,800")
+    options.add_argument("--lang=uk-UA")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--start-maximized")
+    options.add_argument("--no-sandbox")
+    options.add_argument("--disable-dev-shm-usage")
+
+    return uc.Chrome(options=options)
 
 def main():
     print("=" * 60)
-    print("ДП Документ Кельн, Händelstraße 25−29 — моніторинг")
+    print("ДП Документ Берлин мониторинг — моніторинг")
     print(f"Перевірка кожні {CHECK_INTERVAL // 60} хвилин")
     print(f"URL: {URL}")
     print("=" * 60)
