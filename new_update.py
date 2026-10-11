@@ -10,6 +10,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
 # ---------------- НАСТРОЙКИ ----------------
 
 
@@ -91,20 +94,6 @@ def send_telegram_notification(message, photo_path=None):
         log(f"❌ Ошибка отправки в Telegram: {e}")
 
 
-def create_driver():
-    options = uc.ChromeOptions()
-    options.binary_location = r"C:\Program Files\Google\Chrome Beta\Application\chrome.exe"
-
-    options.add_argument("--window-size=1280,800")
-    options.add_argument("--lang=uk-UA")
-    options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_argument("--start-maximized")
-    options.add_argument("--no-sandbox")
-    options.add_argument("--disable-dev-shm-usage")
-
-    return uc.Chrome(options=options)
-
-
 def check_slots():
     log("Перевіряю наявність місць...")
     # send_telegram_notification(f"<b>Починаю перевірку наявності місць на {URL}...</b>")
@@ -180,11 +169,24 @@ def countdown(next_check_time):
 
     print("\r" + " " * 50 + "\r", end="")
 
+def get_chrome_major_version(chrome_path):
+    """Мажорна версія встановленого Chrome, щоб uc завантажив сумісний драйвер."""
+    try:
+        out = subprocess.check_output(
+            ["powershell", "-NoProfile", "-Command",
+             f"(Get-Item '{chrome_path}').VersionInfo.ProductVersion"],
+            text=True, timeout=15,
+        ).strip()
+        return int(out.split(".")[0])
+    except Exception as e:
+        log(f"⚠️ Не вдалося визначити версію Chrome: {e}")
+        return None
+
+
 def create_driver():
     options = uc.ChromeOptions()
-    options.binary_location = (
-        r"C:\Program Files\Google\Chrome\Application\chrome.exe"
-    )
+    chrome_path = r"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    options.binary_location = chrome_path
 
     options.add_argument("--window-size=1280,800")
     options.add_argument("--lang=uk-UA")
@@ -193,7 +195,7 @@ def create_driver():
     options.add_argument("--no-sandbox")
     options.add_argument("--disable-dev-shm-usage")
 
-    return uc.Chrome(options=options)
+    return uc.Chrome(options=options, version_main=get_chrome_major_version(chrome_path))
 
 def main():
     print("=" * 60)
