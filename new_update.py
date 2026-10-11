@@ -8,7 +8,8 @@ import winsound
 import requests
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.support.ui import Select, WebDriverWait
 
 sys.stdout.reconfigure(encoding="utf-8")
 sys.stderr.reconfigure(encoding="utf-8")
@@ -30,8 +31,12 @@ CHECK_INTERVAL = 10 * 60  # 15 минут
 
 SCREENSHOT_PATH = os.path.join(os.getcwd(), "slots_found.png")
 
+SERVICE_VALUE = "4"  # Закордонний паспорт та (або) ID-картка
+
 NO_SLOTS_KEYWORDS = [
     "Наразі всі місця зайняті",
+    "на даний момент всі місця зайняті",
+    "Спробуйте записатись пізніше",
     "Будь ласка, спробуйте в інший час або день",
     "Кількість талонів обмежена пропускною здатністю центру"
 ]
@@ -126,17 +131,35 @@ def check_slots():
 
         WebDriverWait(driver, 60).until(content_loaded)
 
-        # 🔥 ВАЖНО: берём ВИДИМЫЙ текст
-        text = driver.find_element(By.TAG_NAME, "body").text
+        # Повідомлення про відсутність місць з'являється лише після вибору послуги
+        log("Обираю послугу...")
+        WebDriverWait(driver, 30).until(
+            EC.presence_of_element_located((By.ID, "service"))
+        )
+        Select(driver.find_element(By.ID, "service")).select_by_value(SERVICE_VALUE)
+
+        def result_ready(driver):
+            text = driver.find_element(By.TAG_NAME, "body").text
+            if any(k in text for k in NO_SLOTS_KEYWORDS):
+                return "no_slots"
+            dates = driver.find_elements(By.CSS_SELECTOR, "#date option")
+            if any(o.get_attribute("value") for o in dates):
+                return "slots"
+            return False
+
+        try:
+            result = WebDriverWait(driver, 30).until(result_ready)
+        except TimeoutException:
+            log("⚠️ Не вдалося визначити результат після вибору послуги")
+            return False
 
         # 🔍 Проверка отсутствия мест
-        if any(k in text for k in NO_SLOTS_KEYWORDS):
+        if result == "no_slots":
             log("❌ Місць немає")
             # send_telegram_notification(f"<b>Місць немає</b>")
             beep_quiet()
             return False
 
-        # если нет текста — вероятно есть слоты
         log("✅ МОЖЛИВО Є ВІЛЬНІ МІСЦЯ!")
         driver.save_screenshot(SCREENSHOT_PATH)
         beep_found()
