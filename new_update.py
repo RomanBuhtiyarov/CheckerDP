@@ -41,8 +41,21 @@ NO_SLOTS_KEYWORDS = [
     "Кількість талонів обмежена пропускною здатністю центру"
 ]
 
-TELEGRAM_TOKEN = "8270411425:AAGmTOgU8FQFss_YKEP0uNOMk9-T2DXYwNA"  # Замените на токен вашего бота
-TELEGRAM_CHAT_ID = "-4863657228"  # Замените на ID чата/группы
+def load_dotenv(path=os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")):
+    """Підвантажує KEY=VALUE з .env, не перезаписуючи вже задані змінні середовища."""
+    if not os.path.exists(path):
+        return
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, value = line.split("=", 1)
+                os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
+
+
+load_dotenv()
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ------------------------------------------
 
