@@ -31,6 +31,9 @@ CHECK_INTERVAL = 10 * 60  # 15 минут
 
 SCREENSHOT_PATH = os.path.join(os.getcwd(), "slots_found.png")
 
+UNKNOWN_SCREENSHOT_PATH = os.path.join(os.getcwd(), "unknown_result.png")
+UNKNOWN_TEXT_PATH = os.path.join(os.getcwd(), "unknown_result.txt")
+
 SERVICE_VALUE = "4"  # Закордонний паспорт та (або) ID-картка
 
 NO_SLOTS_KEYWORDS = [
@@ -161,9 +164,16 @@ def check_slots():
             return False
 
         try:
-            result = WebDriverWait(driver, 30).until(result_ready)
+            result = WebDriverWait(driver, 40).until(result_ready)
         except TimeoutException:
             log("⚠️ Не вдалося визначити результат після вибору послуги")
+            try:
+                driver.save_screenshot(UNKNOWN_SCREENSHOT_PATH)
+                with open(UNKNOWN_TEXT_PATH, "w", encoding="utf-8") as f:
+                    f.write(driver.find_element(By.TAG_NAME, "body").text)
+                log(f"Збережено для діагностики: {UNKNOWN_SCREENSHOT_PATH}, {UNKNOWN_TEXT_PATH}")
+            except Exception as e:
+                log(f"⚠️ Не вдалося зберегти діагностику: {e}")
             return False
 
         # 🔍 Проверка отсутствия мест
