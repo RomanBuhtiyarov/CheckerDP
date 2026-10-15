@@ -165,6 +165,17 @@ def check_slots():
 
         try:
             result = WebDriverWait(driver, 40).until(result_ready)
+            if result == "slots":
+                # Захист від хибного спрацювання: option у #date можуть бути
+                # лишками до того, як сайт підвантажив відповідь для обраної послуги.
+                # Підтверджуємо, лише якщо стан стабільний кілька перевірок поспіль.
+                for _ in range(3):
+                    time.sleep(3)
+                    recheck = result_ready(driver)
+                    if recheck != "slots":
+                        result = recheck or "no_slots"
+                        log("ℹ️ Початковий «позитив» не підтвердився — місць немає")
+                        break
         except TimeoutException:
             log("⚠️ Не вдалося визначити результат після вибору послуги")
             try:
